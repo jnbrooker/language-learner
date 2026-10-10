@@ -41,50 +41,95 @@ LL.views = (function () {
   }
 
   /* ---------------- Today ---------------- */
+  const INTENSITY = [
+    { id: 'steady', label: 'Steady', n: 15, note: '~20 min/day' },
+    { id: 'intense', label: 'Intensive', n: 30, note: '~40 min/day' },
+    { id: 'max', label: 'Maximum', n: 50, note: '60+ min/day' },
+  ];
   function today(el) {
     const l = lang();
+    const s = LL.settings();
     const st = LL.srs.stats(l);
     const conj = LL.store.get('conjstats:' + l, {});
     let cn = 0, cok = 0;
     Object.values(conj).forEach(v => { cn += v.n; cok += v.ok; });
+    const tr = LL.store.get('transstats:' + l, { n: 0, words: 0, ok: 0 });
+    const dict = LL.store.get('dictstats:' + l, { n: 0, words: 0, ok: 0 });
     const session = st.due + st.newLeft;
+    const progress = LL.srs.deckProgress(l);
+    const films = LL.data[l].films.list;
+    const watched = new Set(LL.store.get('watched:' + l, []));
+    const nextFilm = films.find(f => !watched.has(f.title));
+    const pct = (a, b) => b ? Math.round(100 * a / b) + '%' : '—';
     el.innerHTML = `
-      <h1>${LANG_NAME[l]} — today</h1>
-      <p class="lede">Goal: follow ${l === 'fr' ? 'French New Wave' : 'Spanish-language'} films with ${l === 'fr' ? 'French' : 'Spanish'} subtitles, then without.</p>
+      <div class="section-head"><span class="kicker">Intensive ${LANG_NAME[l]}</span></div>
+      <h1>Today</h1>
+      <p class="lede">Daily typed recall, production and listening, aimed at real comprehension: conversations, books, and films in the original.</p>
       <div class="grid">
         <div class="stat"><div class="num">${st.due}</div><div class="lbl">reviews due</div></div>
-        <div class="stat"><div class="num">${st.newLeft}</div><div class="lbl">new cards today</div></div>
+        <div class="stat"><div class="num">${st.newLeft}</div><div class="lbl">new cards left today</div></div>
         <div class="stat"><div class="num">${st.learned}</div><div class="lbl">cards learned (${st.mature} solid)</div></div>
         <div class="stat"><div class="num">${st.streak}</div><div class="lbl">day streak</div></div>
       </div>
       <div class="card" style="margin-top:16px">
         <div class="row">
           <div>
-            <h2 style="margin:0">${session ? `${session} cards waiting` : 'All caught up'}</h2>
+            <h2 style="margin:0">${session ? `${session} cards waiting` : 'Reviews cleared'}</h2>
             <div class="muted small">${st.today.n} reviews done today · ${st.total - st.fresh} of ${st.total} cards started</div>
           </div>
           <div class="spacer"></div>
           ${session ? `<a class="btn primary" href="#/review">Start review →</a>` : `<a class="btn" href="#/review?extra=10">Learn 10 more</a>`}
         </div>
+        <div class="row" style="margin-top:14px">
+          <span class="small muted">Intensity</span>
+          <div class="seg" id="intensity">${INTENSITY.map(i => `<button data-n="${i.n}" class="${s.newPerDay === i.n ? 'active' : ''}" title="${i.note}">${i.label} <span class="small" style="opacity:.75">${i.n}</span></button>`).join('')}</div>
+          <span class="small muted">${s.newPerDay} new cards/day · ${(INTENSITY.find(i => i.n === s.newPerDay) || { note: 'custom' }).note}</span>
+        </div>
       </div>
-      <h2>A fast daily routine (~45 min)</h2>
+
+      <h2>Daily training</h2>
       <div class="card">
-        <ol style="margin:0; padding-left:20px">
-          <li><b>Review (15 min)</b> — clear all due cards. Type every answer; say the sentence aloud after the audio plays.</li>
-          <li><b>Conjugate (5 min)</b> — one round. Focus on the tenses with the lowest accuracy${cn ? ` (overall ${Math.round(100 * cok / cn)}% so far)` : ''}.</li>
-          <li><b>Dictation (5 min)</b> — 5–10 sentences. This trains the ear for fast film dialogue.</li>
-          <li><b>Watch (20+ min)</b> — a film from the <a href="#/films">ladder</a> with ${l === 'fr' ? 'French' : 'Spanish'} subtitles. Pause on any line you can't parse and mine it as a card. Before a new film, run its subtitles through <a href="#/subtitles">Subtitle prep</a>.</li>
-        </ol>
+        <table class="decks"><tbody>
+          <tr><td><b>1. Review</b><div class="muted small">Clear every due card. Type each answer, then say the sentence aloud after the audio.</div></td><td class="small muted">${st.today.n} today</td><td><a class="btn small" href="#/review">Go</a></td></tr>
+          <tr><td><b>2. Translate</b><div class="muted small">English → ${LANG_NAME[l]}, whole sentences. The hardest drill, and the one that builds speaking.</div></td><td class="small muted">${pct(tr.ok, tr.words)} words</td><td><a class="btn small" href="#/translate">Go</a></td></tr>
+          <tr><td><b>3. Conjugate</b><div class="muted small">One round; aim the tense selection at your weakest.</div></td><td class="small muted">${pct(cok, cn)}</td><td><a class="btn small" href="#/conjugate">Go</a></td></tr>
+          <tr><td><b>4. Dictation</b><div class="muted small">10 sentences. Trains your ear for native-speed speech.</div></td><td class="small muted">${pct(dict.ok, dict.words)} words</td><td><a class="btn small" href="#/dictation">Go</a></td></tr>
+          <tr><td><b>5. Immerse</b><div class="muted small">20+ minutes of real ${LANG_NAME[l]}: a film, podcast or book. Mine the lines you nearly understand into <a href="#/add">My cards</a>.</div></td><td></td><td><a class="btn small" href="#/cinema">Cinema</a></td></tr>
+        </tbody></table>
+      </div>
+
+      <h2>Progress by deck</h2>
+      <div class="card">
+        <table class="decks"><tbody>
+        ${progress.map(d => `<tr><td style="width:38%"><b>${esc(d.name)}</b></td>
+          <td><div class="bar"><div style="width:${100 * d.started / d.total}%"></div></div></td>
+          <td class="small muted" style="width:150px;text-align:right">${d.started}/${d.total} started · ${d.solid} solid</td>
+          <td style="width:70px;text-align:right"><a class="btn small" href="#/review?deck=${d.key}">Focus</a></td></tr>`).join('')}
+        </tbody></table>
+        <p class="muted small" style="margin-bottom:0">“Solid” = interval of 3+ weeks. “Focus” runs a session on one deck only. Turn decks on/off in <a href="#/settings">Settings</a>.</p>
+      </div>
+
+      <div class="card cinema-banner" style="margin-top:24px">
+        <div class="section-head"><span class="kicker">Cinema</span></div>
+        <h2 style="margin:4px 0 6px">The goal: ${l === 'fr' ? 'French New Wave' : 'Spanish-language classics'} in the original</h2>
+        <p style="margin:0 0 10px">${nextFilm ? `Next on the ladder: <b>${esc(nextFilm.title)}</b> (${nextFilm.year}), listening difficulty ${'●'.repeat(nextFilm.difficulty)}${'○'.repeat(5 - nextFilm.difficulty)}.` : 'You\'ve worked through the whole ladder.'}</p>
+        <div class="row"><a class="btn primary" href="#/cinema">Film ladder</a><a class="btn" href="#/subtitles">Subtitle prep</a><a class="btn" href="#/review?deck=cinema">Study film vocabulary</a></div>
       </div>
       <p class="muted small">Progress is stored in this browser. Back it up from <a href="#/settings">Settings</a>.</p>
     `;
+    $$(el, '#intensity button').forEach(b => b.onclick = () => {
+      const s2 = LL.settings();
+      s2.newPerDay = +b.dataset.n;
+      LL.saveSettings(s2);
+      today(el);
+    });
   }
 
   /* ---------------- Review ---------------- */
   function review(el, params) {
     const l = lang();
     const s = LL.settings();
-    const { due, newCards } = LL.srs.buildSession(l, { extraNew: +params.extra || 0 });
+    const { due, newCards } = LL.srs.buildSession(l, { extraNew: +params.extra || 0, deck: params.deck });
     // Interleave new cards between reviews.
     const queue = [];
     const n = newCards.slice();
@@ -98,7 +143,7 @@ LL.views = (function () {
     let done = 0, correct = 0, card, phase, result, typed;
 
     if (!total) {
-      el.innerHTML = `<div class="card empty"><h2>Nothing due 🎬</h2><p class="muted">Come back later, or learn some extra cards now.</p>
+      el.innerHTML = `<div class="card empty"><h2>Nothing due</h2><p class="muted">Come back later, or learn some extra cards now.</p>
         <div class="row" style="justify-content:center"><a class="btn primary" href="#/review?extra=10">Learn 10 more</a><a class="btn" href="#/conjugate">Conjugation drill</a><a class="btn" href="#/dictation">Dictation</a></div></div>`;
       return;
     }
@@ -215,7 +260,7 @@ LL.views = (function () {
 
     function setup() {
       LL.onKey = e => { if (e.key === 'Enter') { e.preventDefault(); start(); } };
-      el.innerHTML = `<h1>Conjugation drill</h1>
+      el.innerHTML = `<div class="section-head"><span class="kicker">Train</span></div><h1>Conjugation drill</h1>
         <p class="lede">Type the verb form only (the pronoun is optional). Missed items come back at the end of the round.</p>
         <div class="card">
           <h3 style="margin-top:0">Tenses</h3>
@@ -340,7 +385,7 @@ LL.views = (function () {
     }
     function play(slow) { LL.speech.say(card.full, l, { slow }); }
     function draw(res) {
-      let body = `<h1>Dictation</h1>
+      let body = `<div class="section-head"><span class="kicker">Train</span></div><h1>Dictation</h1>
         <p class="lede">Listen, then type exactly what you hear. Esc = replay, Shift+Esc = slow. ${dstats.n ? `<span class="small">Lifetime: ${Math.round(100 * dstats.ok / Math.max(1, dstats.words))}% of ${dstats.words} words.</span>` : ''}</p>
         <div class="card review-card">
           <div class="row" style="margin-bottom:12px">
@@ -430,8 +475,8 @@ LL.views = (function () {
       draw();
     }
     function draw() {
-      let html = `<h1>Subtitle prep</h1>
-        <p class="lede">Load a film's ${LANG_NAME[l]} subtitle file (.srt) before watching. You'll see the words you're likely not to know, most frequent first, each in a real line from the film. Learn the top ~50 and the film becomes far easier to follow.</p>
+      let html = `<div class="section-head"><span class="kicker">Cinema</span></div><h1>Subtitle prep</h1>
+        <p class="lede">Load a film's (or TV episode's) ${LANG_NAME[l]} subtitle file (.srt) before watching. You'll see the words you're likely not to know, most frequent first, each in a real line from the film. Learn the top ~50 and the film becomes far easier to follow.</p>
         <div class="card">
           <div class="row"><input type="file" id="file" accept=".srt,.vtt,.txt,.sub"><span class="muted small">or paste subtitle text:</span></div>
           <textarea id="paste" placeholder="Paste .srt contents here…" style="margin-top:8px"></textarea>
@@ -552,30 +597,117 @@ LL.views = (function () {
     LL.store.set('custom:' + l, list);
   }
 
-  /* ---------------- Films ---------------- */
-  function films(el) {
+  /* ---------------- Cinema ---------------- */
+  function cinema(el) {
     const l = lang();
     const F = LL.data[l].films;
-    el.innerHTML = `<h1>${F.title}</h1>
+    const watched = new Set(LL.store.get('watched:' + l, []));
+    const vocab = LL.srs.deckProgress(l).find(d => d.key === 'cinema');
+    el.innerHTML = `<div class="section-head"><span class="kicker">Cinema</span></div>
+      <h1>${F.title}</h1>
       <p class="lede">${F.intro}</p>
+      <div class="grid">
+        <div class="stat"><div class="num">${F.list.filter(f => watched.has(f.title)).length}/${F.list.length}</div><div class="lbl">films watched</div></div>
+        <div class="stat"><div class="num">${vocab ? vocab.started + '/' + vocab.total : '—'}</div><div class="lbl">film-vocab cards started</div></div>
+        <a class="stat" href="#/subtitles" style="text-decoration:none;color:inherit"><div class="num">.srt →</div><div class="lbl">Subtitle prep for your next film</div></a>
+        <a class="stat" href="#/review?deck=cinema" style="text-decoration:none;color:inherit"><div class="num">▶</div><div class="lbl">Study film vocabulary</div></a>
+      </div>
       <h2>How to watch for learning</h2>
       <div class="card"><ol style="margin:0;padding-left:20px">${F.method.map(m => `<li style="margin-bottom:6px">${m}</li>`).join('')}</ol></div>
-      <h2>The ladder — easiest first</h2>
-      ${F.list.map((f, i) => `<div class="card film"><div class="rank">${i + 1}</div><div>
-        <h3>${esc(f.title)} <span class="muted small">(${f.year})</span></h3>
+      <h2>The ladder: easiest first</h2>
+      ${F.list.map((f, i) => `<div class="card film" style="${watched.has(f.title) ? 'opacity:.6' : ''}"><div class="rank">${i + 1}</div><div>
+        <div class="row"><h3>${esc(f.title)} <span class="muted small">(${f.year})</span></h3><span class="spacer"></span>
+          <label class="check small"><input type="checkbox" data-film="${esc(f.title)}" ${watched.has(f.title) ? 'checked' : ''}> watched</label></div>
         <div class="small muted">${esc(f.director)} · listening difficulty <span class="dots">${'●'.repeat(f.difficulty)}${'○'.repeat(5 - f.difficulty)}</span></div>
         <div style="margin:6px 0">${(f.tags || []).map(t => `<span class="tag">${esc(t)}</span>`).join('')}</div>
         <p style="margin:6px 0">${f.why}</p>
         ${f.tip ? `<p class="small" style="margin:0"><b>Tip:</b> ${f.tip}</p>` : ''}
       </div></div>`).join('')}
       ${F.footer ? `<p class="muted small">${F.footer}</p>` : ''}`;
+    $$(el, '[data-film]').forEach(c => c.onchange = () => {
+      const w = new Set(LL.store.get('watched:' + l, []));
+      if (c.checked) w.add(c.dataset.film); else w.delete(c.dataset.film);
+      LL.store.set('watched:' + l, Array.from(w));
+      cinema(el);
+    });
+  }
+
+  /* ---------------- Translate ---------------- */
+  function translate(el) {
+    const l = lang();
+    const st = LL.srs.states(l);
+    const all = LL.srs.allCards(l).filter(c => c.type === 'cloze' && c.translation);
+    const studied = all.filter(c => st[c.id] && st[c.id].reps > 0);
+    const stats = LL.store.get('transstats:' + l, { n: 0, words: 0, ok: 0 });
+    let source = studied.length >= 10 ? 'studied' : 'all';
+    let card, phase, showKey = false;
+
+    function pick() {
+      const pool = source === 'studied' && studied.length ? studied : all;
+      card = pool[Math.floor(Math.random() * pool.length)];
+      phase = 'ask';
+      showKey = false;
+      draw();
+    }
+    function draw(res) {
+      const n = LL.text.words(card.full).length;
+      let body = `<div class="section-head"><span class="kicker">Train</span></div><h1>Translate</h1>
+        <p class="lede">Write the whole sentence in ${LANG_NAME[l]}. Producing language is far harder than recognising it, which is why this drill works. Other wordings can be right too, so judge your answer honestly against the model.
+        ${stats.n ? `<span class="small">Lifetime: ${Math.round(100 * stats.ok / Math.max(1, stats.words))}% of ${stats.words} words over ${stats.n} sentences.</span>` : ''}</p>
+        <div class="card review-card">
+          <div class="row" style="margin-bottom:12px">
+            <select id="src"><option value="studied" ${source === 'studied' ? 'selected' : ''}>Sentences I've studied (${studied.length})</option><option value="all" ${source === 'all' ? 'selected' : ''}>All sentences (${all.length})</option></select>
+            <span class="spacer"></span><span class="deck-tag">${esc(card.deckName)}</span>
+          </div>
+          <div class="sentence">${esc(card.translation)}</div>
+          <div class="hint">${n} words${card.hint ? ' · ' + esc(card.hint) : ''}</div>
+          ${showKey || phase !== 'ask' ? `<div class="hint" style="margin-left:6px">key: ${esc(card.answers[0])}</div>` : ''}`;
+      if (phase === 'ask') {
+        body += `<textarea class="dict" rows="2" placeholder="Type it in ${LANG_NAME[l]}…" autocomplete="off" autocapitalize="off" spellcheck="false" style="font-size:20px;margin-top:14px"></textarea>${accentBar(l)}
+          <div class="row" style="margin-top:12px"><button class="btn primary" id="check">Check ↵</button><button class="btn" id="key">Hint: key word</button><button class="btn" id="skip">Skip</button></div>`;
+      } else {
+        const pct = Math.round(100 * res.correct / Math.max(1, res.total));
+        body += `<div class="diff sentence" style="font-size:22px;margin-top:14px">${res.parts.map(p => `<span class="${p.t}">${esc(p.w)}</span>`).join(' ')}</div>
+          <div class="feedback ${pct === 100 ? 'good' : pct >= 70 ? 'warn' : 'bad'}">${pct}% match: <b>${esc(card.full)}</b></div>
+          ${card.note ? `<div class="note">${esc(card.note)}</div>` : ''}
+          <div class="row" style="margin-top:12px"><button class="btn" id="play">🔊 Hear it</button><button class="btn primary" id="next">Next ↵</button></div>
+          <p class="muted small">Say the model sentence out loud twice before moving on.</p>`;
+      }
+      el.innerHTML = body + '</div>';
+      $(el, '#src').onchange = e => { source = e.target.value; pick(); };
+      if ($(el, '#check')) $(el, '#check').onclick = check;
+      if ($(el, '#skip')) $(el, '#skip').onclick = pick;
+      if ($(el, '#key')) $(el, '#key').onclick = () => { const v = $(el, 'textarea').value; showKey = true; draw(); $(el, 'textarea').value = v; };
+      if ($(el, '#play')) $(el, '#play').onclick = () => LL.speech.say(card.full, l);
+      if ($(el, '#next')) $(el, '#next').onclick = pick;
+      const ta = $(el, 'textarea');
+      if (ta) setTimeout(() => ta.focus(), 0);
+    }
+    function check() {
+      const res = LL.text.diff($(el, 'textarea').value, card.full);
+      stats.n++;
+      stats.words += res.total;
+      stats.ok += res.correct;
+      LL.store.set('transstats:' + l, stats);
+      phase = 'show';
+      draw(res);
+      LL.speech.say(card.full, l);
+    }
+    LL.onKey = e => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (phase === 'ask') check(); else pick();
+      }
+    };
+    if (!all.length) { el.innerHTML = '<p>No sentences loaded.</p>'; return; }
+    pick();
   }
 
   /* ---------------- Grammar ---------------- */
   function grammar(el) {
     const l = lang();
     const G = LL.data[l].grammar;
-    el.innerHTML = `<h1>Grammar refresher</h1>
+    el.innerHTML = `<div class="section-head"><span class="kicker">Train</span></div><h1>Grammar refresher</h1>
       <p class="lede">${G.intro}</p>
       ${G.sections.map((s, i) => `<details class="gram" ${i === 0 ? 'open' : ''}><summary>${s.title}</summary>${s.html}</details>`).join('')}`;
     $$(el, '.ex').forEach(x => {
@@ -590,8 +722,8 @@ LL.views = (function () {
     const l = lang();
     function draw() {
       const list = LL.store.get('custom:' + l, []);
-      el.innerHTML = `<h1>Add your own cards</h1>
-        <p class="lede">The most efficient cards are lines <i>you</i> met in a film. Pause, copy the subtitle line, blank out the word that tripped you up.</p>
+      el.innerHTML = `<h1>My cards</h1>
+        <p class="lede">The best cards are sentences <i>you</i> met yourself in a film, a book, a podcast or a conversation. Copy the line and blank out the word that tripped you up.</p>
         <div class="card">
           <label class="check"><input type="radio" name="type" value="cloze" checked> Fill-in-the-blank sentence</label>
           <label class="check"><input type="radio" name="type" value="flip"> Front/back (expressions)</label>
@@ -662,7 +794,7 @@ LL.views = (function () {
       <div class="card">
         <h3 style="margin-top:0">Daily load</h3>
         <label>New cards per day <input type="number" id="npd" min="0" max="200" value="${s.newPerDay}" style="width:80px"></label>
-        <p class="muted small">20 is sustainable (~15 min/day of reviews after a few weeks). 30–40 if you're going hard — reviews scale with it.</p>
+        <p class="muted small">15 is steady, 30 is intensive, 50 is maximum. Daily review load grows to roughly 8–10× this number of cards after a few weeks.</p>
         <h3>Decks (${LANG_NAME[l]})</h3>
         ${Object.keys(decks).map(k => `<div><label class="check"><input type="checkbox" data-deck="${k}" ${s.decks[l][k] !== false ? 'checked' : ''}> <b>${esc(decks[k].name)}</b> <span class="muted small">— ${cards.filter(c => c.deck === k).length} cards. ${esc(decks[k].desc || '')}</span></label></div>`).join('')}
         <h3>Audio</h3>
@@ -711,5 +843,5 @@ LL.views = (function () {
     };
   }
 
-  return { today, review, conjugate, dictation, subtitles, films, grammar, add, settings };
+  return { today, review, translate, conjugate, dictation, subtitles, cinema, films: cinema, grammar, add, settings };
 })();

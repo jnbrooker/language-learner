@@ -31,7 +31,7 @@ LL.store = {
 LL.settings = function () {
   return Object.assign({
     lang: 'fr',
-    newPerDay: 20,
+    newPerDay: 30,
     rate: 1.0,
     voice: { fr: '', es: '' },
     listenFirst: false,

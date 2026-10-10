@@ -72,16 +72,16 @@ LL.srs = (function () {
     opts = opts || {};
     const st = states(lang);
     const now = Date.now();
-    const cards = enabledCards(lang);
+    const cards = opts.deck ? allCards(lang).filter(c => c.deck === opts.deck) : enabledCards(lang);
     const due = cards.filter(c => st[c.id] && st[c.id].due <= now)
       .sort((a, b) => st[a.id].due - st[b.id].due);
     const s = LL.settings();
-    const newLeft = Math.max(0, s.newPerDay - newCountToday(lang)) + (opts.extraNew || 0);
+    const newLeft = opts.deck ? (opts.extraNew || 10) : Math.max(0, s.newPerDay - newCountToday(lang)) + (opts.extraNew || 0);
     // Interleave decks for new cards so you don't get 20 of the same kind in a row.
     const fresh = cards.filter(c => !st[c.id]);
     const byDeck = {};
     fresh.forEach(c => (byDeck[c.deck] = byDeck[c.deck] || []).push(c));
-    const order = ['custom', 'core', 'spoken', 'grammar', 'cinema'].filter(k => byDeck[k]);
+    const order = ['custom', 'core', 'everyday', 'conversation', 'grammar', 'spoken', 'cinema'].filter(k => byDeck[k]);
     Object.keys(byDeck).forEach(k => { if (!order.includes(k)) order.push(k); });
     const newCards = [];
     let added = true;
@@ -176,5 +176,20 @@ LL.srs = (function () {
     return set;
   }
 
-  return { allCards, decks, buildSession, answer, stats, states, knownWords, parseCloze };
+  function deckProgress(lang) {
+    const st = states(lang);
+    const ds = decks(lang);
+    const all = allCards(lang);
+    const out = [];
+    for (const k of Object.keys(ds)) {
+      const cs = all.filter(c => c.deck === k);
+      if (!cs.length) continue;
+      let started = 0, solid = 0;
+      cs.forEach(c => { const x = st[c.id]; if (x) { started++; if (x.interval >= 21) solid++; } });
+      out.push({ key: k, name: ds[k].name, total: cs.length, started, solid });
+    }
+    return out;
+  }
+
+  return { deckProgress, allCards, decks, buildSession, answer, stats, states, knownWords, parseCloze };
 })();
