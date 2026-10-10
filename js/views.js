@@ -409,12 +409,14 @@ LL.views = (function () {
     }
     function analyse(text) {
       const lines = parse(text);
-      const freq = new Map(), ctx = new Map(), caps = new Map();
+      const freq = new Map(), ctx = new Map(), midCaps = new Map(), lower = new Set();
       let totalTok = 0;
       for (const line of lines) {
         const raw = line.match(/[A-Za-zÀ-ÖØ-öø-ÿŒœ]+/g) || [];
         raw.forEach((w, i) => {
-          if (i > 0 && /^[A-ZÀ-ÖØ-Þ]/.test(w)) caps.set(w.toLowerCase(), (caps.get(w.toLowerCase()) || 0) + 1);
+          const lw = w.toLowerCase();
+          if (!/^[A-ZÀ-ÖØ-Þ]/.test(w)) lower.add(lw);
+          else if (i > 0) midCaps.set(lw, (midCaps.get(lw) || 0) + 1);
         });
         for (const t of LL.text.tokens(line, l)) {
           totalTok++;
@@ -422,7 +424,7 @@ LL.views = (function () {
           if (!ctx.has(t) || (ctx.get(t).length > 90 && line.length < ctx.get(t).length)) ctx.set(t, line);
         }
       }
-      analysis = { lang: l, lines: lines.length, totalTok, freq, ctx, caps };
+      analysis = { lang: l, lines: lines.length, totalTok, freq, ctx, midCaps, lower };
       LL._subs = analysis;
       page = 0;
       draw();
@@ -442,7 +444,8 @@ LL.views = (function () {
         let knownTok = 0;
         const unknown = [];
         for (const [w, n] of analysis.freq) {
-          const isName = (analysis.caps.get(w) || 0) >= Math.max(1, n * 0.8);
+          // Never written in lowercase, and capitalised mid-line or frequent: almost certainly a name.
+          const isName = !analysis.lower.has(w) && ((analysis.midCaps.get(w) || 0) > 0 || n >= 3);
           if (isKnown(w) || isName || w.length < 3) knownTok += n;
           else unknown.push([w, n]);
         }
@@ -455,7 +458,7 @@ LL.views = (function () {
             <div class="stat"><div class="num">${coverage}%</div><div class="lbl">of running words known*</div></div>
             <div class="stat"><div class="num">${unknown.length}</div><div class="lbl">words to triage</div></div>
           </div>
-          <p class="muted small">*Known = common function words + answers you've learned + words you mark below. ~95% coverage is where films start to feel comfortable. Words that are almost always capitalised are treated as names.</p>
+          <p class="muted small">*Known = common function words + answers you've learned + words you mark below. ~95% coverage is where films start to feel comfortable. Words that only ever appear capitalised are treated as names.</p>
           <div class="card">
             <div class="row"><b>Most frequent unknown words</b><span class="spacer"></span>
               <button class="btn small" id="allknown">Mark all ${shown.length} on this page as known</button>
